@@ -1,0 +1,108 @@
+
+---
+
+### 📄 `main.py`
+```python
+#!/usr/bin/env python3
+"""
+Ethereum Balance Checker
+Fetch ETH and ERC-20 balances for one or multiple addresses.
+"""
+import argparse
+from typing import List, Dict
+
+from web3 import Web3
+
+# Minimal ERC-20 ABI (balanceOf + decimals + symbol)
+ERC20_ABI = [
+    {
+        "constant": True,
+        "inputs": [{"name": "_owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "balance", "type": "uint256"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function",
+    },
+]
+
+
+def get_eth_balance(w3: Web3, address: str) -> float:
+    balance_wei = w3.eth.get_balance(address)
+    return w3.from_wei(balance_wei, "ether")
+
+
+def get_token_balance(w3: Web3, token_address: str, user_address: str) -> Dict[str, float]:
+    token = w3.eth.contract(address=w3.to_checksum_address(token_address), abi=ERC20_ABI)
+    try:
+        balance = token.functions.balanceOf(w3.to_checksum_address(user_address)).call()
+        decimals = token.functions.decimals().call()
+        symbol = token.functions.symbol().call()
+        return {symbol: balance / (10 ** decimals)}
+    except Exception as e:
+        return {f"TOKEN_{token_address[:6]}": 0.0}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Ethereum Balance Checker")
+    parser.add_argument("--rpc", required=True, help="Ethereum RPC endpoint URL")
+    parser.add_argument("--addresses", nargs="+", required=True, help="One or more Ethereum addresses")
+    parser.add_argument("--tokens", nargs="*", default=[], help="ERC-20 token contract addresses")
+    args = parser.parse_args()
+
+    w3 = Web3(Web3.HTTPProvider(args.rpc))
+    if not w3.is_connected():
+        raise SystemExit("Error: cannot connect to Ethereum RPC")
+
+    # Fetch balances
+    results = []
+    headers = ["ADDRESS", "ETH"]
+    token_symbols: List[str] = []
+
+    # Preload token metadata
+    token_contracts = []
+    for token_addr in args.tokens:
+        contract = w3.eth.contract(address=w3.to_checksum_address(token_addr), abi=ERC20_ABI)
+        try:
+            symbol = contract.functions.symbol().call()
+        except Exception:
+            symbol = token_addr[:6]
+        headers.append(symbol)
+        token_contracts.append((contract, symbol))
+
+    for addr in args.addresses:
+        row = [addr]
+        eth_balance = get_eth_balance(w3, addr)
+        row.append(f"{eth_balance:,.4f}")
+        for contract, symbol in token_contracts:
+            try:
+                balance = contract.functions.balanceOf(w3.to_checksum_address(addr)).call()
+                decimals = contract.functions.decimals().call()
+                row.append(f"{balance / (10 ** decimals):,.4f}")
+            except Exception:
+                row.append("0.0000")
+        results.append(row)
+
+    # Print table
+    col_widths = [max(len(h), max(len(r[i]) for r in results)) for i, h in enumerate(headers)]
+    header_line = "  ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
+    print(header_line)
+    print("  ".join("-" * w for w in col_widths))
+    for row in results:
+        print("  ".join(row[i].ljust(col_widths[i]) for i in range(len(headers))))
+
+
+if __name__ == "__main__":
+    main()
