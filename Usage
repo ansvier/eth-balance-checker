@@ -1,0 +1,7 @@
+# ETH balance for a single address
+python main.py --rpc https://cloudflare-eth.com --addresses 0x742d35Cc6634C0532925a3b844Bc454e4438f44e
+
+# ETH + USDT balance for multiple addresses
+python main.py --rpc https://cloudflare-eth.com \
+  --addresses 0x742d35Cc6634C0532925a3b844Bc454e4438f44e 0x00000000219ab540356cBB839Cbe05303d7705Fa \
+  --tokens 0xdAC17F958D2ee523a2206206994597C13D831ec7
